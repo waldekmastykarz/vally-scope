@@ -1,0 +1,41 @@
+{
+  "name": "vally-scope",
+  "version": "0.1.0",
+  "description": "Scope grading and analysis components for Vally",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "references",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
+    "build": "npm run clean && tsc -p tsconfig.json",
+    "test": "vitest run tests"
+  },
+  "dependencies": {
+    "@github/copilot-sdk": "^1.0.11",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
+    "atifact": "^0.13.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@microsoft/vally": "^0.16.0",
+    "@microsoft/vally-cli": "^0.16.0",
+    "@types/node": "^24.10.0",
+    "typescript": "^6.0.0",
+    "vitest": "^4.1.8"
+  },
+  "peerDependencies": {
+    "@microsoft/vally": ">=0.16.0 <0.17.0"
+  }
+}

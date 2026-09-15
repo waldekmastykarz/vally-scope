@@ -1,0 +1,59 @@
+{
+  "schemaVersion": "2.0",
+  "scenarioType": "code",
+  "trajectoryId": "fixture-trajectory",
+  "gates": {
+    "select": { "name": "select", "state": "passed", "reason": "All prerequisite criteria passed", "evidence": [] },
+    "build": { "name": "build", "state": "inapplicable", "reason": "No build applies to this text artifact", "prompt": "Build this project.", "evidence": [] },
+    "test": { "name": "test", "state": "prerequisite-blocked", "reason": "test requires build to pass; build was inapplicable", "evidence": [] },
+    "run": { "name": "run", "state": "prerequisite-blocked", "reason": "run requires build to pass; build was inapplicable", "evidence": [] }
+  },
+  "criteria": [
+    {
+      "name": "Uses the requested text format",
+      "classification": "prerequisite",
+      "state": "passed",
+      "reason": "answer.txt is plain text and contains ready",
+      "evidence": [{ "kind": "workspace", "path": "answer.txt" }]
+    }
+  ],
+  "eligibleForComparison": true,
+  "behaviorObservations": [
+    {
+      "behavior": "CorrectOutcome",
+      "category": "Execution",
+      "extensionPointSurface": "BaseModelKnowledge",
+      "sourceArtifact": "trajectory.json",
+      "evidence": "The agent created the requested file.",
+      "trajectoryId": "fixture-trajectory",
+      "eventIndex": 1
+    }
+  ],
+  "rootCauses": [],
+  "outputMetrics": {
+    "codeGenerated": true,
+    "defects": {
+      "rawCount": 0,
+      "rootCauses": []
+    }
+  },
+  "usage": {
+    "requests": 1,
+    "promptTokens": 10,
+    "completionTokens": 4,
+    "cachedTokens": 0,
+    "trajectories": [{ "trajectoryId": "fixture-trajectory", "eventIndexes": [0, 1] }]
+  },
+  "artifacts": [
+    { "kind": "trajectory", "path": "scope/evidence/trajectory.json", "trajectoryId": "fixture-trajectory" },
+    { "kind": "diff", "path": "scope/evidence/workspace.patch", "trajectoryId": "fixture-trajectory" }
+  ],
+  "errors": [],
+  "projection": {
+    "passed": true,
+    "score": 1,
+    "selectPassed": true,
+    "eligibleForComparison": true,
+    "description": "Vally projection: infrastructure must succeed and Select must pass. The criterion pass fraction is reported as score but does not control pass/fail. Experiment reporting remains authoritative."
+  }
+}

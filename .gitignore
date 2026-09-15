@@ -1,0 +1,5 @@
+.evals/
+node_modules/
+dist/
+.test-work/
+vally-results/

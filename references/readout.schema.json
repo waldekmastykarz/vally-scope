@@ -1,0 +1,888 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "readout.schema.json",
+  "title": "Scope Readout",
+  "description": "Structured representation of a Scope v2 scenario readout. Three layers: scorecard (L1), behavior analysis (L2), action list (L3). Supports drill-down to individual runs and trajectories, with evidence references tracing every claim to its source.",
+  "type": "object",
+  "required": ["metadata", "scorecard", "behaviorAnalysis", "actionList"],
+  "additionalProperties": false,
+  "properties": {
+    "metadata": { "$ref": "#/$defs/metadata" },
+    "scorecard": { "$ref": "#/$defs/scorecard" },
+    "behaviorAnalysis": { "$ref": "#/$defs/behaviorAnalysis" },
+    "actionList": { "$ref": "#/$defs/actionList" },
+    "summary": { "$ref": "#/$defs/summary" },
+    "runs": {
+      "type": "array",
+      "description": "Individual run results that the readout aggregates over. Each run is a single execution of the scenario with a specific profile.",
+      "items": { "$ref": "#/$defs/run" }
+    }
+  },
+
+  "$defs": {
+
+    "evidenceRef": {
+      "type": "object",
+      "description": "Pointer linking a readout-level claim to its source evidence in a specific run or trajectory step.",
+      "required": ["runId"],
+      "additionalProperties": false,
+      "properties": {
+        "runId": {
+          "type": "string",
+          "description": "ID of the run that produced this evidence (maps to runs[].id)."
+        },
+        "stepId": {
+          "type": "string",
+          "description": "Step ID within the trajectory (maps to trajectory steps[].stepId)."
+        },
+        "turnNumber": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Agent turn number where the behavior or evidence was observed."
+        },
+        "criterionName": {
+          "type": "string",
+          "description": "Name of the criterion this evidence supports."
+        },
+        "excerpt": {
+          "type": "string",
+          "description": "Quoted excerpt from the run or trajectory that constitutes the evidence."
+        }
+      }
+    },
+
+    "passRate": {
+      "type": "object",
+      "description": "Fraction pass rate (e.g., 3/5 → { passed: 3, total: 5 }).",
+      "required": ["passed", "total"],
+      "additionalProperties": false,
+      "properties": {
+        "passed": { "type": "integer", "minimum": 0 },
+        "total": { "type": "integer", "minimum": 1 }
+      }
+    },
+
+    "gatePassRate": {
+      "description": "Gate pass rate, or N/A when the gate was inapplicable in every run.",
+      "oneOf": [
+        { "$ref": "#/$defs/passRate" },
+        { "const": "N/A" }
+      ]
+    },
+
+    "profile": {
+      "type": "object",
+      "description": "A specific combination of harness, model, extension points, and OS.",
+      "required": ["id", "harness", "model"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string", "description": "Optional display name for this profile. When omitted, consumers derive a name from the profile configuration." },
+        "harness": { "type": "string", "examples": ["Copilot Chat", "Claude Code"] },
+        "model": { "type": "string", "examples": ["Sonnet 4.6", "GPT-5"] },
+        "extensions": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Extension points loaded. Empty or omitted for bare baseline."
+        },
+        "os": { "type": "string", "examples": ["Windows", "macOS"] },
+        "isBaseline": { "type": "boolean", "description": "True for the bare baseline profile used as delta reference." },
+        "additionalInstructions": { "type": "string", "description": "Extra instructions given to the agent for this profile." }
+      }
+    },
+
+    "metadata": {
+      "type": "object",
+      "required": ["title", "date", "scenarioType", "runsPerProfile", "model", "harness", "instruction", "profiles"],
+      "additionalProperties": false,
+      "properties": {
+        "title": { "type": "string" },
+        "date": { "type": "string", "format": "date" },
+        "scenarioType": { "type": "string", "enum": ["code", "response"] },
+        "runsPerProfile": { "type": "integer", "minimum": 1 },
+        "model": { "type": "string", "description": "Primary model across profiles." },
+        "harness": { "type": "string", "description": "Primary harness across profiles." },
+        "instruction": { "type": "string", "description": "Scenario instruction given to the agent." },
+        "benchmarkId": { "type": "string" },
+        "batchDate": { "type": "string", "format": "date" },
+        "workspaceSnapshot": { "type": "string" },
+        "profiles": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/profile" },
+          "minItems": 1
+        },
+        "criteria": {
+          "type": "array",
+          "description": "Evaluation criteria definitions (rubric) used by the LLM judge. Copied from run.criteria[].",
+          "items": { "$ref": "#/$defs/criterionDefinition" }
+        }
+      }
+    },
+
+    "criterionDefinition": {
+      "type": "object",
+      "description": "A single evaluation criterion from the scenario rubric.",
+      "required": ["name", "classification"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "description": "Criterion name, used as the key in criteriaResults." },
+        "classification": {
+          "type": "string",
+          "description": "Dimension this criterion belongs to (e.g., 'prerequisite', 'idiomaticUse', 'dependencyCurrency', 'configurationCorrectness')."
+        },
+        "instructions": {
+          "type": "string",
+          "description": "Full evaluation instructions including pass/fail/skip conditions."
+        }
+      }
+    },
+
+    "scorecard": {
+      "type": "object",
+      "description": "Layer 1: pass rates per profile and per-criteria breakdowns.",
+      "required": ["profileResults", "criteriaBreakdowns"],
+      "additionalProperties": false,
+      "properties": {
+        "keyFinding": { "type": "string", "description": "Primary insight from the scorecard data." },
+        "criteriaAnalysis": { "type": "string", "description": "Cross-profile analysis of per-criteria patterns." },
+        "profileResults": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/profileResult" },
+          "minItems": 1
+        },
+        "criteriaBreakdowns": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/criteriaBreakdown" },
+          "description": "Only includes profiles with Select-passing runs."
+        }
+      }
+    },
+
+    "profileResult": {
+      "type": "object",
+      "description": "Scorecard row for one profile.",
+      "required": ["profileId", "select", "tokens"],
+      "additionalProperties": false,
+      "properties": {
+        "profileId": { "type": "string" },
+        "runIds": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "IDs of the runs that this profile result aggregates over."
+        },
+        "score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Headline Score (0-1): pooled pass rate over ALL checks = (gate passes + quality-criteria passes) / (gate totals + quality-criteria totals). This is the primary number."
+        },
+        "qualityScore": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Diagnostic split: pooled pass rate over quality criteria only (gates excluded)."
+        },
+        "reliabilityScore": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Diagnostic split: pooled pass rate over gates only."
+        },
+        "deltaLift": {
+          "type": ["number", "null"],
+          "description": "Δ Lift = score(profile) - score(baseline), stored as a decimal (e.g. 0.096 = +9.6pp). Null for baseline."
+        },
+        "deltaDefects": {
+          "type": ["number", "null"],
+          "description": "Percentage change in avg defects vs. baseline as decimal (e.g., -0.89 = −89%). Code scenarios only."
+        },
+        "deltaTokens": {
+          "type": ["integer", "null"],
+          "description": "Absolute token difference vs. baseline (raw count)."
+        },
+        "codeGenerationRate": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Fraction of runs that produced code (0–1). Code scenarios only."
+        },
+        "select": { "$ref": "#/$defs/gatePassRate" },
+        "build": { "$ref": "#/$defs/gatePassRate" },
+        "test": { "$ref": "#/$defs/gatePassRate" },
+        "run": { "$ref": "#/$defs/gatePassRate" },
+        "deploy": { "$ref": "#/$defs/gatePassRate" },
+        "idiomatic": { "$ref": "#/$defs/passRate", "description": "Diagnostic only (NOT used for scoring)." },
+        "dependencyCurrency": { "$ref": "#/$defs/passRate", "description": "Diagnostic only (NOT used for scoring)." },
+        "configurationCorrectness": { "$ref": "#/$defs/passRate", "description": "Diagnostic only (NOT used for scoring)." },
+        "defects": {
+          "type": "number",
+          "description": "Average defect count per run. Code scenarios only."
+        },
+        "tokens": {
+          "type": "integer",
+          "description": "Average token count per run (raw). Diagnostic; the headline cost figure is avgCostUsd."
+        },
+        "avgCostUsd": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Average cost per run in USD, priced from per-turn token usage at the model's GitHub Copilot rates. Headline cost figure."
+        },
+        "deltaCostUsd": {
+          "type": ["number", "null"],
+          "description": "avgCostUsd(profile) - avgCostUsd(baseline), in USD. Null for baseline."
+        },
+        "requests": {
+          "type": "number",
+          "description": "Average tool invocation count per run."
+        }
+      }
+    },
+
+    "criteriaBreakdown": {
+      "type": "object",
+      "required": ["profileId", "dimensions"],
+      "additionalProperties": false,
+      "properties": {
+        "profileId": { "type": "string" },
+        "dimensions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "passRate", "criteria"],
+            "additionalProperties": false,
+            "properties": {
+              "name": { "type": "string", "description": "Dimension name (e.g., 'Idiomatic use')." },
+              "passRate": {
+                "$ref": "#/$defs/passRate",
+                "description": "Dimension-level pass rate — all criteria must pass for a run to count."
+              },
+              "criteria": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["description", "passRate"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": { "type": "string", "description": "Criterion identifier (e.g., 'k04')." },
+                    "description": { "type": "string" },
+                    "passRate": { "$ref": "#/$defs/passRate" },
+                    "annotation": { "type": "string", "description": "Inline note (e.g., '← systemic failure')." },
+                    "evidence": {
+                      "type": "array",
+                      "items": { "$ref": "#/$defs/evidenceRef" },
+                      "description": "Per-run evidence for this criterion's pass/fail determination."
+                    }
+                  }
+                },
+                "minItems": 1
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "behaviorAnalysis": {
+      "type": "object",
+      "description": "Layer 2: what the agent did during runs and how consistently.",
+      "required": ["profiles"],
+      "additionalProperties": false,
+      "properties": {
+        "profiles": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["profileId", "behaviors"],
+            "additionalProperties": false,
+            "properties": {
+              "profileId": { "type": "string" },
+              "narrative": { "type": "string", "description": "Analysis of this profile's behavior patterns." },
+              "behaviors": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["category", "behavior", "rate", "source"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "category": {
+                      "type": "string",
+                      "enum": ["discovery", "invocation", "delegation", "consumption", "execution", "recovery"]
+                    },
+                    "behavior": {
+                      "type": "string",
+                      "description": "Behavior label (e.g., 'Discovered', 'Skipped invocation', 'Content misused')."
+                    },
+                    "rate": { "$ref": "#/$defs/passRate" },
+                    "surface": {
+                      "type": "string",
+                      "description": "Extension point surface type (e.g., 'MCPTools', 'Skills')."
+                    },
+                    "source": {
+                      "type": "string",
+                      "description": "Specific artifact or explanation (e.g., 'azure-cosmos-skill.md')."
+                    },
+                    "evidence": {
+                      "type": "array",
+                      "items": { "$ref": "#/$defs/evidenceRef" },
+                      "description": "Per-run evidence for this behavior observation."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "actionList": {
+      "type": "object",
+      "description": "Layer 3: root causes ranked by impact, separated by action type.",
+      "additionalProperties": false,
+      "properties": {
+        "narrative": {
+          "type": "string",
+          "description": "Analysis bridging behavior patterns to root causes (e.g., 'Why Learn skills caused drag')."
+        },
+        "fix": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["priority", "rootCause", "runs", "description", "fixTarget"],
+            "additionalProperties": false,
+            "properties": {
+              "priority": { "type": "integer", "minimum": 1 },
+              "rootCause": { "type": "string", "description": "Root cause label (e.g., 'VocabularyMismatch')." },
+              "runs": { "$ref": "#/$defs/passRate", "description": "Frequency across applicable runs." },
+              "description": { "type": "string", "description": "Why this root cause matters." },
+              "fixTarget": { "type": "string", "description": "Specific artifact and change to make." },
+              "ownership": {
+                "type": "string",
+                "enum": ["in_profile", "external_dependency"],
+                "description": "Whether the fix target is in the partner's profile or an external dependency."
+              },
+              "evidence": {
+                "type": "array",
+                "items": { "$ref": "#/$defs/evidenceRef" },
+                "description": "Run/trajectory evidence supporting this root cause."
+              }
+            }
+          }
+        },
+        "create": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["priority", "gap", "runs", "whatToBuild"],
+            "additionalProperties": false,
+            "properties": {
+              "priority": { "type": "integer", "minimum": 1 },
+              "gap": { "type": "string", "description": "Missing capability (e.g., 'No partition key guidance')." },
+              "runs": { "$ref": "#/$defs/passRate", "description": "Frequency across applicable runs." },
+              "whatToBuild": { "type": "string", "description": "Extension point to create, with specifics." },
+              "type": {
+                "type": "string",
+                "enum": ["skill", "mcp_tool", "instructions", "docs"],
+                "description": "Type of extension point to create."
+              },
+              "rationale": { "type": "string", "description": "Why existing extension points cannot cover this gap." },
+              "evidence": {
+                "type": "array",
+                "items": { "$ref": "#/$defs/evidenceRef" },
+                "description": "Run/trajectory evidence supporting this gap identification."
+              }
+            }
+          }
+        },
+        "constraints": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["priority", "rootCause", "runs", "description", "affected"],
+            "additionalProperties": false,
+            "properties": {
+              "priority": { "type": "integer", "minimum": 1 },
+              "rootCause": { "type": "string", "description": "Constraint label (e.g., 'StaleTrainingData')." },
+              "runs": { "$ref": "#/$defs/passRate", "description": "Frequency across applicable runs." },
+              "description": { "type": "string", "description": "Why this constraint exists and cannot be fixed via extension points." },
+              "affected": { "type": "string", "description": "Affected dimensions or areas." },
+              "mitigation": { "type": "string", "description": "How partners can work around this constraint." },
+              "evidence": {
+                "type": "array",
+                "items": { "$ref": "#/$defs/evidenceRef" },
+                "description": "Run/trajectory evidence demonstrating this constraint."
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "summary": {
+      "type": "object",
+      "description": "Overall findings and per-profile verdicts.",
+      "additionalProperties": false,
+      "properties": {
+        "narrative": { "type": "string", "description": "Concluding analysis." },
+        "profileVerdicts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["profileId", "verdict"],
+            "additionalProperties": false,
+            "properties": {
+              "profileId": { "type": "string" },
+              "verdict": { "type": "string", "description": "One-line assessment (e.g., 'Best performer on this scenario')." }
+            }
+          }
+        }
+      }
+    },
+
+    "run": {
+      "type": "object",
+      "description": "A single execution of the scenario with a specific profile. The unit that readout pass rates aggregate over.",
+      "required": ["id", "profileId", "status", "results"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique run identifier (e.g., '69f09cbd33ed94b16abed5df')."
+        },
+        "profileId": {
+          "type": "string",
+          "description": "References metadata.profiles[].id."
+        },
+        "batchId": {
+          "type": "string",
+          "description": "Batch identifier grouping concurrent runs."
+        },
+        "name": {
+          "type": "string",
+          "description": "Descriptive run name (scenario + profile)."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["Done", "Failed", "Cancelled"]
+        },
+        "trajectoryRef": {
+          "type": "string",
+          "description": "ID or URI of the trajectory for drill-down into agent steps."
+        },
+        "trajectoriesUrl": {
+          "type": "string",
+          "format": "uri",
+          "description": "URL to the trajectory archive."
+        },
+        "workspaceSnapshotUrl": {
+          "type": "string",
+          "format": "uri",
+          "description": "URL to the post-run workspace snapshot."
+        },
+        "owner": {
+          "type": "string",
+          "description": "Email of the run owner."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last update timestamp."
+        },
+        "metadata": {
+          "type": "object",
+          "description": "Agent version and other run-level metadata.",
+          "additionalProperties": true,
+          "properties": {
+            "agentVersion": { "type": "string" }
+          }
+        },
+        "results": { "$ref": "#/$defs/runResults" }
+      }
+    },
+
+    "runResults": {
+      "type": "object",
+      "description": "Evaluation results for a single run.",
+      "required": ["gates", "criteriaResults"],
+      "additionalProperties": false,
+      "properties": {
+        "durations": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "codingSeconds": { "type": "number" },
+            "evaluationSeconds": { "type": "number" }
+          }
+        },
+        "tokens": { "type": "integer", "description": "Total tokens consumed in this run." },
+        "requests": { "type": "integer", "description": "Total tool invocations in this run." },
+        "codeGenerated": { "type": "boolean" },
+        "defects": {
+          "oneOf": [
+            { "type": "null" },
+            { "type": "integer", "minimum": 0 },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "rawCount": { "type": "integer", "minimum": 0, "description": "Total compiler/linter error count." },
+                "rootCauses": {
+                  "type": "array",
+                  "description": "Classified root causes behind the raw defect count.",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": true,
+                    "properties": {
+                      "category": { "type": "string" },
+                      "count": { "type": "integer" },
+                      "description": { "type": "string" }
+                    }
+                  }
+                }
+              }
+            }
+          ],
+          "description": "Null for response scenarios, integer for simple count, or object with classified root causes."
+        },
+        "gates": {
+          "type": "object",
+          "description": "Pass/fail/na status for each gate in this run.",
+          "required": ["select"],
+          "additionalProperties": false,
+          "properties": {
+            "select": { "$ref": "#/$defs/gateResult" },
+            "build": { "$ref": "#/$defs/gateResult" },
+            "test": { "$ref": "#/$defs/gateResult" },
+            "run": { "$ref": "#/$defs/gateResult" },
+            "deploy": { "$ref": "#/$defs/gateResult" }
+          }
+        },
+        "criteriaResults": {
+          "type": "object",
+          "description": "Per-criterion evaluation results keyed by criterion name.",
+          "additionalProperties": { "$ref": "#/$defs/criterionResult" }
+        },
+        "behaviorObservations": {
+          "type": "array",
+          "description": "Behaviors observed during this run, with trajectory-level evidence.",
+          "items": { "$ref": "#/$defs/behaviorObservation" }
+        },
+        "rootCauses": {
+          "type": "array",
+          "description": "Root causes identified in this run.",
+          "items": { "$ref": "#/$defs/rootCause" }
+        },
+        "actions": {
+          "type": "object",
+          "description": "Recommended actions derived from root causes. Absent when rootCauses is empty.",
+          "additionalProperties": false,
+          "properties": {
+            "fix": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["priority", "rootCause", "runsAffected", "fixTarget", "description"],
+                "additionalProperties": false,
+                "properties": {
+                  "priority": { "type": "integer", "minimum": 1 },
+                  "rootCause": { "type": "string" },
+                  "runsAffected": { "type": "integer", "minimum": 1 },
+                  "behaviorChain": { "type": "string" },
+                  "fixTarget": { "type": "string" },
+                  "description": { "type": "string" },
+                  "ownership": {
+                    "type": "string",
+                    "enum": ["in_profile", "external_dependency"]
+                  }
+                }
+              }
+            },
+            "create": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["priority", "gap", "runsAffected", "proposal"],
+                "additionalProperties": false,
+                "properties": {
+                  "priority": { "type": "integer", "minimum": 1 },
+                  "gap": { "type": "string" },
+                  "runsAffected": { "type": "integer", "minimum": 1 },
+                  "behaviorChain": { "type": "string" },
+                  "proposal": { "type": "string" },
+                  "type": {
+                    "type": "string",
+                    "enum": ["skill", "mcp_tool", "instructions", "docs"]
+                  },
+                  "rationale": { "type": "string" }
+                }
+              }
+            },
+            "constraints": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["description", "runsAffected"],
+                "additionalProperties": false,
+                "properties": {
+                  "description": { "type": "string" },
+                  "runsAffected": { "type": "integer", "minimum": 1 },
+                  "mitigation": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "reason": {
+          "type": "string",
+          "description": "Summary of run completion (e.g., 'Evaluation completed successfully')."
+        }
+      }
+    },
+
+    "gateResult": {
+      "type": "object",
+      "required": ["status"],
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["pass", "fail", "na", "skipped"]
+        }
+      }
+    },
+
+    "criterionResult": {
+      "type": "object",
+      "description": "Evaluation result for a single criterion in a single run.",
+      "required": ["result", "reason"],
+      "additionalProperties": false,
+      "properties": {
+        "result": {
+          "type": "string",
+          "enum": ["pass", "fail", "skipped"]
+        },
+        "reason": {
+          "type": "string",
+          "description": "LLM judge's explanation of why the criterion passed or failed."
+        },
+        "trajectoryRef": {
+          "type": "string",
+          "description": "Step ID or location in the trajectory where the relevant evidence appears."
+        }
+      }
+    },
+
+    "behaviorObservation": {
+      "type": "object",
+      "description": "A single behavior observed during a run, linked to the trajectory step where it occurred.",
+      "required": ["behavior", "category", "evidence"],
+      "additionalProperties": false,
+      "properties": {
+        "behavior": {
+          "type": "string",
+          "description": "Behavior label from taxonomy (e.g., 'SkippedInvocation', 'PartiallyCorrect')."
+        },
+        "category": {
+          "type": "string",
+          "enum": ["Discovery", "Invocation", "Delegation", "Consumption", "Execution", "Recovery"]
+        },
+        "extensionPointSurface": {
+          "type": "string",
+          "description": "Surface type (e.g., 'MCPTools', 'Skills', 'BaseModelKnowledge')."
+        },
+        "sourceArtifact": {
+          "type": "string",
+          "description": "Specific tool or file that was the target of the behavior."
+        },
+        "evidence": {
+          "type": "string",
+          "description": "Quoted or summarized evidence from the trajectory."
+        },
+        "turnNumber": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Trajectory step number where this behavior was observed."
+        }
+      }
+    },
+
+    "rootCause": {
+      "type": "object",
+      "description": "A root cause identified within a single run, linking behaviors to evaluation failures.",
+      "required": ["label", "section", "source", "affectedDimensions", "behaviorChain"],
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "type": "string",
+          "description": "Root cause taxonomy label (e.g., 'VocabularyMismatch', 'StaleTrainingData')."
+        },
+        "section": {
+          "type": "string",
+          "enum": ["fix", "create", "constraint"],
+          "description": "Which action list section this root cause maps to."
+        },
+        "source": {
+          "type": "string",
+          "description": "The artifact or system component responsible."
+        },
+        "affectedDimensions": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Evaluation dimensions impacted (e.g., ['idiomaticUse'])."
+        },
+        "behaviorChain": {
+          "type": "string",
+          "description": "Narrative chain: root cause → behavior → evaluation failure."
+        },
+        "evidence": {
+          "type": "string",
+          "description": "Quoted or summarized evidence from the trajectory or run output."
+        }
+      }
+    },
+
+    "trajectory": {
+      "type": "object",
+      "description": "ATIF trajectory — full session recording of an agent run. Stored separately; referenced by run.trajectoryRef.",
+      "required": ["schemaVersion", "sessionId", "agent", "steps"],
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {
+          "type": "string",
+          "description": "ATIF schema version (e.g., 'ATIF-v1.6')."
+        },
+        "sessionId": { "type": "string" },
+        "agent": { "$ref": "#/$defs/trajectoryAgent" },
+        "steps": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/trajectoryStep" }
+        },
+        "finalMetrics": { "$ref": "#/$defs/trajectoryMetrics" },
+        "notes": { "type": "string" }
+      }
+    },
+
+    "trajectoryAgent": {
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "version": { "type": "string" },
+        "modelName": { "type": "string" },
+        "toolDefinitions": {
+          "type": "array",
+          "description": "Tools available to the agent during the session.",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "properties": {
+              "type": { "type": "string" },
+              "function": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string" },
+                  "description": { "type": "string" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "trajectoryStep": {
+      "type": "object",
+      "description": "A single step in the agent trajectory — system prompt, user message, or agent turn.",
+      "required": ["stepId", "timestamp", "source"],
+      "additionalProperties": false,
+      "properties": {
+        "stepId": {
+          "type": "string",
+          "description": "Unique step identifier. Referenced by evidenceRef.stepId and criterionResult.trajectoryRef for traceability."
+        },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "source": {
+          "type": "string",
+          "enum": ["system", "user", "agent"]
+        },
+        "modelName": { "type": "string" },
+        "message": {
+          "type": "string",
+          "description": "Text content — system prompt, user prompt, or agent response."
+        },
+        "reasoningContent": {
+          "type": "string",
+          "description": "Agent's internal reasoning (when available)."
+        },
+        "toolCalls": {
+          "type": "array",
+          "description": "Tools invoked by the agent during this step.",
+          "items": {
+            "type": "object",
+            "required": ["toolCallId", "functionName", "arguments"],
+            "additionalProperties": false,
+            "properties": {
+              "toolCallId": { "type": "string" },
+              "functionName": { "type": "string" },
+              "arguments": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "observation": {
+          "type": "object",
+          "description": "Tool execution results returned to the agent.",
+          "additionalProperties": false,
+          "properties": {
+            "results": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["sourceCallId", "content"],
+                "additionalProperties": false,
+                "properties": {
+                  "sourceCallId": {
+                    "type": "string",
+                    "description": "Maps back to toolCalls[].toolCallId."
+                  },
+                  "content": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "metrics": { "$ref": "#/$defs/trajectoryStepMetrics" }
+      }
+    },
+
+    "trajectoryStepMetrics": {
+      "type": "object",
+      "description": "Token usage for a single agent step.",
+      "additionalProperties": false,
+      "properties": {
+        "promptTokens": { "type": "integer" },
+        "completionTokens": { "type": "integer" },
+        "cachedTokens": { "type": "integer" },
+        "extra": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    },
+
+    "trajectoryMetrics": {
+      "type": "object",
+      "description": "Aggregate token usage across the full trajectory.",
+      "additionalProperties": false,
+      "properties": {
+        "totalPromptTokens": { "type": "integer" },
+        "totalCompletionTokens": { "type": "integer" },
+        "totalCachedTokens": { "type": "integer" },
+        "totalSteps": { "type": "integer" }
+      }
+    }
+  }
+}

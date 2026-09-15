@@ -1,0 +1,19 @@
+name: scope-plugin-fixture
+type: capability
+defaults:
+  judge_model: claude-opus-4.8
+
+stimuli:
+  - name: scope-fixture
+    prompt: Create a text file named answer.txt containing the word ready.
+    graders:
+      - type: scope
+        config:
+          scenario_type: code
+          criteria:
+            - name: Uses the requested text format
+              classification: prerequisite
+              instructions: Pass only if answer.txt is plain text and contains ready.
+            - name: Contains no unrelated output
+              classification: idiomaticUse
+              instructions: Pass only if the workspace contains no unrelated generated files.

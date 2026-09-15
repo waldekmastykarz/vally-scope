@@ -1,0 +1,30 @@
+{
+  "schema_version": "ATIF-v1.7",
+  "session_id": "fixture-session",
+  "agent": {
+    "name": "fixture-agent",
+    "version": "1.0",
+    "model_name": "fixture-model"
+  },
+  "steps": [
+    {
+      "step_id": 1,
+      "source": "user",
+      "message": "Create answer.txt containing ready."
+    },
+    {
+      "step_id": 2,
+      "source": "agent",
+      "message": "Created answer.txt.",
+      "metrics": {
+        "prompt_tokens": 10,
+        "completion_tokens": 4
+      }
+    }
+  ],
+  "final_metrics": {
+    "total_prompt_tokens": 10,
+    "total_completion_tokens": 4,
+    "total_steps": 2
+  }
+}
