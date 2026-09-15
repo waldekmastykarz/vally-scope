@@ -27,6 +27,7 @@ import {
   type ScopeReporterTrial,
 } from "./reporter-contract.js";
 import { assertCompleteManifest, buildReadout, validateReadoutSchema } from "./readout.js";
+import { findFinalTrialDirectories } from "./trial-output.js";
 
 const MANIFEST_NAME = "scope-readout.manifest.json";
 const READOUT_NAME = "readout.json";
@@ -73,6 +74,9 @@ export class ScopeExperimentReporter implements PlanReporter {
     const outputDirectory = this.options.outputDirectory ?? artifacts.sessionLogsDir ??
       (artifacts.jsonl ? dirname(artifacts.jsonl) : process.cwd());
     const manifest = this.createManifest(status);
+    if (artifacts.sessionLogsDir) {
+      await linkAtifTrajectories(manifest, artifacts.sessionLogsDir, outputDirectory);
+    }
     await finalizeScopeReadout(manifest, {
       outputDirectory,
       ...(this.options.targetProfileId ? { targetProfileId: this.options.targetProfileId } : {}),
@@ -118,6 +122,19 @@ export class ScopeExperimentReporter implements PlanReporter {
     if (!this.options.outputDirectory) return;
     await mkdir(this.options.outputDirectory, { recursive: true });
     await writeJsonAtomic(join(this.options.outputDirectory, MANIFEST_NAME), this.createManifest("collecting"));
+  }
+}
+
+async function linkAtifTrajectories(
+  manifest: ScopeReporterManifest,
+  sessionLogsDirectory: string,
+  readoutDirectory: string,
+): Promise<void> {
+  const trialDirectories = await findFinalTrialDirectories(sessionLogsDirectory);
+  for (const trial of manifest.trials) {
+    const trialDirectory = trialDirectories.get(trial.itemId);
+    if (!trialDirectory) continue;
+    trial.trajectoryRef = relative(readoutDirectory, join(trialDirectory, "trajectory.json")).replace(/\\/g, "/");
   }
 }
 

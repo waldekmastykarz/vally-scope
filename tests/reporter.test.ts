@@ -99,9 +99,16 @@ function result(id: string) {
 
 describe("ScopeExperimentReporter", () => {
   it("collects out-of-order immutable results and finalizes a schema-valid readout", async () => {
-    const reporter = new ScopeExperimentReporter({ outputDirectory: testRoot, baselineVariant: "bare" });
+    const readoutDirectory = join(testRoot, "readout");
+    const sessionLogsDirectory = join(testRoot, "session-logs");
+    const reporter = new ScopeExperimentReporter({ outputDirectory: readoutDirectory, baselineVariant: "bare" });
     const bare = item("item-bare", "bare");
     const learn = item("item-learn", "learn", ["learn"]);
+    for (const [itemId, variant] of [["item-bare", "bare"], ["item-learn", "learn"]]) {
+      const trialDirectory = join(sessionLogsDirectory, variant, "scope-fixture", "scope-fixture", "claude-sonnet-5", "0");
+      await mkdir(trialDirectory, { recursive: true });
+      await writeFile(join(trialDirectory, "metadata.json"), JSON.stringify({ trialId: itemId }), "utf8");
+    }
     await reporter.onRunStart({ totalItems: 2, evals: [], workers: 2 } as never);
     await reporter.onTrialStart(bare);
     await reporter.onTrialStart(learn);
@@ -109,20 +116,28 @@ describe("ScopeExperimentReporter", () => {
     await reporter.onTrialResult({ item: learn, result: learnResult });
     learnResult.trajectory.events.length = 0;
     await reporter.onTrialResult({ item: bare, result: result("item-bare") });
-    await reporter.onRunComplete({ evals: [], passed: true, hadExecutionErrors: false }, { sessionLogsDir: testRoot }, "completed");
+    await reporter.onRunComplete(
+      { evals: [], passed: true, hadExecutionErrors: false },
+      { sessionLogsDir: sessionLogsDirectory },
+      "completed",
+    );
 
-    const manifest = JSON.parse(await readFile(join(testRoot, "scope-readout.manifest.json"), "utf8"));
+    const manifest = JSON.parse(await readFile(join(readoutDirectory, "scope-readout.manifest.json"), "utf8"));
     expect(manifest.finalization.status).toBe("succeeded");
     expect(manifest.provenance.synthesis).toEqual({ model: "claude-opus-4.8", policy: "test-policy" });
     expect(manifest.trials.map((trial: any) => trial.itemId)).toEqual(["item-bare", "item-learn"]);
     expect(manifest.trials[1].trajectoryEvents).toHaveLength(1);
     expect(manifest.trials[1].profile.environment).toEqual({ skills: ["learn"] });
     expect(manifest.trials[1].graderConfig).toHaveProperty("criteria.0.instructions", "Use text.");
-    const readout = JSON.parse(await readFile(join(testRoot, "readout.json"), "utf8"));
+    const readout = JSON.parse(await readFile(join(readoutDirectory, "readout.json"), "utf8"));
     expect(readout).toHaveProperty("actionList");
     expect(readout.scorecard.keyFinding).toBe("Synthesized finding");
     expect(readout.runs[1].metadata.environment).toEqual({ skills: ["learn"] });
     expect(readout.runs[1].metadata.criterionEvidence).toHaveProperty("Uses the requested text format");
+    expect(readout.runs.map((run: any) => run.trajectoryRef)).toEqual([
+      "../session-logs/bare/scope-fixture/scope-fixture/claude-sonnet-5/0/trajectory.json",
+      "../session-logs/learn/scope-fixture/scope-fixture/claude-sonnet-5/0/trajectory.json",
+    ]);
   });
 
   it("records duplicate results and cancellation as a failed finalization sidecar", async () => {

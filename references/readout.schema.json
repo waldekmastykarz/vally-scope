@@ -467,7 +467,7 @@
         },
         "trajectoryRef": {
           "type": "string",
-          "description": "ID or URI of the trajectory for drill-down into agent steps."
+          "description": "Relative path from readout.json to this run's ATIF trajectory.json sidecar."
         },
         "trajectoriesUrl": {
           "type": "string",
