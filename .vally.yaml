@@ -1,0 +1,5 @@
+plugins:
+  grader:
+    - ./dist/index.js
+  reporter:
+    - ./dist/index.js
