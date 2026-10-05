@@ -263,6 +263,34 @@ describe("Scope readout", () => {
     expect(readout.actionList.fix[0].evidence.every((entry: any) => entry.runId === "run-learn")).toBe(true);
   });
 
+  it("compares profiles that differ by model and selects the target by profile name", async () => {
+    const modelProfile = (name: string, model: string, isBaseline: boolean): ScopeReporterProfile => ({
+      ...profile(`eval.yaml--task--${name}--copilot-sdk--${model}`, isBaseline),
+      name,
+      model,
+      extensions: [],
+    });
+    const opus = modelProfile("claude-opus-5.5", "claude-opus-5.5", true);
+    const sol = modelProfile("gpt-6.1-sol", "gpt-6.1-sol", false);
+    const astra = modelProfile("gpt-6-astra", "gpt-6-astra", false);
+    const trials = [
+      trial("astra", astra, "passed", 1_000),
+      trial("opus", opus, "passed", 1_000),
+      trial("sol", sol, "passed", 1_000),
+    ];
+
+    const readout = buildReadout(manifest(trials), { targetProfileId: "gpt-6.1-sol" }) as any;
+
+    await expect(validateReadoutSchema(readout)).resolves.toBeUndefined();
+    expect(readout.metadata.model).toBe("claude-opus-5.5");
+    expect(readout.metadata.profiles.map((item: any) => item.model).sort())
+      .toEqual(["claude-opus-5.5", "gpt-6-astra", "gpt-6.1-sol"]);
+    expect(readout.scorecard.profileResults).toHaveLength(3);
+    expect(() => buildReadout(manifest(trials))).toThrow(/target is ambiguous/);
+    expect(() => buildReadout(manifest(trials), { targetProfileId: "gpt-5.6-sol" }))
+      .toThrow(/Unknown target profile/);
+  });
+
   it("rejects incompatible groups and ambiguous baselines", () => {
     const first = profile("first", false);
     const second = profile("second", false);

@@ -42,7 +42,7 @@ export function buildReadout(manifest: ScopeReporterManifest, options: ReadoutBu
   const trials = [...manifest.trials].sort((left, right) => left.itemId.localeCompare(right.itemId));
   const groups = groupTrials(trials);
   if (groups.size !== 1) {
-    throw new Error(`Scope readout requires exactly one compatible scenario/agent/model group; found ${groups.size}: ${[...groups.keys()].join("; ")}`);
+    throw new Error(`Scope readout requires exactly one compatible scenario/agent group; found ${groups.size}: ${[...groups.keys()].join("; ")}`);
   }
   const groupTrialsValue = [...groups.values()][0];
   if (!groupTrialsValue) throw new Error("Scope readout has no trials");
@@ -65,7 +65,7 @@ export function buildReadout(manifest: ScopeReporterManifest, options: ReadoutBu
   const narrative = options.narrative ?? deterministicNarrative(profiles, profileResults, target, baseline, deterministicActions);
   const actions = normalizeActionArithmetic(narrative.actions, profileTrials.get(target.id) ?? [], criteria);
   const readout = {
-    metadata: buildMetadata(manifest.createdAt, groupTrialsValue, profiles, criteria),
+    metadata: buildMetadata(manifest.createdAt, groupTrialsValue, profiles, baseline, criteria),
     scorecard: {
       keyFinding: narrative.keyFinding,
       criteriaAnalysis: narrative.criteriaAnalysis,
@@ -134,7 +134,17 @@ export function assertCompleteManifest(manifest: ScopeReporterManifest): void {
 }
 
 function groupTrials(trials: ScopeReporterTrial[]): Map<string, ScopeReporterTrial[]> {
-  return groupBy(trials, (trial) => [trial.evalFilePath, trial.stimulusName, trial.profile.harness, trial.profile.model].join(" | "));
+  return groupBy(trials, (trial) => [trial.evalFilePath, trial.stimulusName, trial.profile.harness].join(" | "));
+}
+
+export function findProfile(profiles: ScopeReporterProfile[], requested: string): ScopeReporterProfile {
+  const byId = profiles.find((profile) => profile.id === requested);
+  if (byId) return byId;
+  const byName = profiles.filter((profile) => profile.name === requested);
+  if (byName.length === 1) return byName[0]!;
+  throw new Error(byName.length === 0
+    ? `Unknown target profile: ${requested}`
+    : `Target profile name is ambiguous: ${requested}; use a profile ID`);
 }
 
 function selectTarget(
@@ -142,11 +152,7 @@ function selectTarget(
   baseline: ScopeReporterProfile,
   requested?: string,
 ): ScopeReporterProfile {
-  if (requested) {
-    const target = profiles.find((profile) => profile.id === requested);
-    if (!target) throw new Error(`Unknown target profile: ${requested}`);
-    return target;
-  }
+  if (requested) return findProfile(profiles, requested);
   if (profiles.length === 1) return profiles[0]!;
   const alternatives = profiles.filter((profile) => profile.id !== baseline.id);
   if (alternatives.length === 1) return alternatives[0]!;
@@ -165,6 +171,7 @@ function buildMetadata(
   createdAt: string,
   trials: ScopeReporterTrial[],
   profiles: ScopeReporterProfile[],
+  baseline: ScopeReporterProfile,
   criteria: ScopeReporterCriterion[],
 ): Record<string, unknown> {
   const first = trials[0]!;
@@ -175,8 +182,8 @@ function buildMetadata(
     date: createdAt.slice(0, 10),
     scenarioType: first.scope!.scenarioType,
     runsPerProfile: [...counts][0],
-    model: first.profile.model,
-    harness: first.profile.harness,
+    model: baseline.model,
+    harness: baseline.harness,
     instruction: first.instruction,
     profiles: profiles.map((profile) => ({
       id: profile.id,
