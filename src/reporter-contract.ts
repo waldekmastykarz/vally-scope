@@ -2,7 +2,7 @@ import type { ScopeResult } from "./contract.js";
 
 export const SCOPE_REPORTER_MANIFEST_VERSION = "1.0" as const;
 export const READOUT_POLICY_VERSION = "2026-09-11" as const;
-export const PRICING_POLICY_VERSION = "2026-09-11" as const;
+export const PRICING_POLICY_VERSION = "2026-10-04" as const;
 
 export interface ScopeReporterProfile {
   id: string;
