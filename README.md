@@ -32,6 +32,7 @@ graders:
           prompt: Run the tests generated for this project.
         run:
           prompt: Run this project and verify it starts successfully.
+      criteria_instructions: Judge only the files under src/.
       criteria:
         - name: Uses the required product
           classification: prerequisite
@@ -42,7 +43,10 @@ graders:
 ```
 
 Vally injects `defaults.judge_model` into the Scope grader and uses it for every
-judge session. `scenario_type` is `code` or `response`. Scope requires one or
+judge session. `scenario_type` is `code` or `response`. Optional
+`criteria_instructions` are prepended to every criterion judge prompt, before
+the criterion's own `instructions`, so shared context such as definitions and
+judging rules is authored once. Scope requires one or
 two `prerequisite` criteria; all must pass.
 Select controls comparison eligibility, not evidence collection. Remaining
 criteria are still judged when Select fails so a reporter receives the complete
@@ -194,7 +198,10 @@ SCOPE_BASELINE_VARIANT=bare vally experiment run experiment.yaml
 ```
 
 Set `SCOPE_TARGET_PROFILE` when an experiment has more than one non-baseline
-profile. Profile IDs are stable composites printed in the manifest. Set
+profile. It accepts a profile ID or a unique profile name (the variant name);
+profile IDs are stable composites printed in the manifest. Profiles in one
+readout may use different models, so a model-comparison experiment produces a
+single readout with per-profile cost priced at each profile's model. Set
 `SCOPE_READOUT_OUTPUT` to persist collection checkpoints during the run; without
 it, the terminal manifest is written beside Vally's run artifacts. The reporter
 always synthesizes experiment-wide findings and Layer 3 diagnosis with Copilot;

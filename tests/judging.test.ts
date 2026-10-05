@@ -46,12 +46,44 @@ describe("criterion judge isolation", () => {
     ];
 
     await evaluateCriterion(client as never, workspaceFactory as never, criteria[0]!, "judge", 0, "task");
-    await evaluateCriterion(client as never, workspaceFactory as never, criteria[1]!, "judge", 1, "task");
+    await evaluateCriterion(client as never, workspaceFactory as never, criteria[1]!, "judge", 1, "task", "shared rules");
 
     expect(client.createSession).toHaveBeenCalledTimes(2);
     expect(sessionConfigs[0]?.workingDirectory).not.toBe(sessionConfigs[1]?.workingDirectory);
     expect(prompts[1]).not.toContain("secret-1");
+    expect(prompts[0]).not.toContain("Instructions for every criterion");
+    expect(prompts[1]).toContain("Instructions for every criterion:\nshared rules\n\nCriterion: two\nInstructions: second");
     expect(sessionConfigs[0]?.tools).not.toBe(sessionConfigs[1]?.tools);
+  });
+
+  it("rejects malformed verdict arguments so the judge can resubmit in the same session", async () => {
+    const responses: unknown[] = [];
+    const client = {
+      createSession: vi.fn(async (sessionConfig: Record<string, any>) => ({
+        sendAndWait: async () => {
+          const tool = sessionConfig.tools[0];
+          responses.push(await tool.handler({ result: "pass", reason: "ok", evidence: "[]" }));
+          responses.push(await tool.handler({ result: "pass", reason: "ok", evidence: [] }));
+          return { data: { content: "" } };
+        },
+        disconnect: vi.fn(),
+      }) satisfies ScopeJudgeSession),
+    };
+    const workspaceFactory = { create: vi.fn(async (label: string) => `/isolated/${label}`) };
+
+    const result = await evaluateCriterion(
+      client as never,
+      workspaceFactory as never,
+      { name: "one", classification: "idiomaticUse", instructions: "verify" },
+      "judge",
+      0,
+      "task",
+    );
+
+    expect(responses[0]).toMatchObject({ ok: false });
+    expect(responses[1]).toEqual({ ok: true });
+    expect(result.state).toBe("passed");
+    expect(client.createSession).toHaveBeenCalledOnce();
   });
 
   it("retries a missing verdict up to three times in fresh sessions and workspaces", async () => {

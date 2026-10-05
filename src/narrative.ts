@@ -1,11 +1,14 @@
 import { approveAll, defineTool } from "@github/copilot-sdk";
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { z } from "zod";
 import { createCopilotJudgeClient, type ScopeJudgeClientFactory } from "./judge-client.js";
+import { validatedHandler } from "./judging.js";
 import { calculateModelCost } from "./pricing.js";
-import type { ReadoutNarrative } from "./readout.js";
+import { findProfile, type ReadoutNarrative } from "./readout.js";
 import type { ScopeReporterManifest, ScopeReporterProfile } from "./reporter-contract.js";
 
-const NARRATIVE_TIMEOUT_MS = 600_000;
+const NARRATIVE_TIMEOUT_MS = 1_200_000;
 export const READOUT_SYNTHESIS_POLICY_VERSION = "2026-09-14.1" as const;
 
 const evidenceSchema = z.object({
@@ -56,6 +59,7 @@ const narrativeSchema = z.object({
 
 export interface NarrativeGenerationOptions {
   model: string;
+  workingDirectory: string;
   targetProfileId?: string;
   clientFactory?: ScopeJudgeClientFactory;
 }
@@ -97,9 +101,11 @@ export async function generateReadoutNarrative(
   });
   const baselineAggregate = profileAggregates.find((profile) => profile.profileId === baseline.id);
   const targetAggregate = profileAggregates.find((profile) => profile.profileId === target.id);
+  const trialFiles = manifest.profiles.map((profile, index) => ({ profileId: profile.id, file: `trials-${index + 1}.json` }));
   const payload = {
     instruction: manifest.trials[0]?.instruction,
     rubric: manifest.trials[0]?.criteria ?? [],
+    graderConfig: manifest.trials[0]?.graderConfig ?? {},
     profiles: manifest.profiles.map(({ id, name, harness, model, extensions, isBaseline, environment }) => ({
       id, name, harness, model, extensions, isBaseline, environment,
     })),
@@ -122,11 +128,13 @@ export async function generateReadoutNarrative(
             : "unchanged";
       return { criterion: criterion.name, status, baseline: baselineCriterion, target: criterion };
     }) ?? [],
-    trialsByProfile: manifest.profiles.map((profile) => ({
-      profileId: profile.id,
-      trials: manifest.trials.filter((trial) => trial.profile.id === profile.id).map((trial) => ({
+    trialFiles,
+  };
+  await rm(options.workingDirectory, { recursive: true, force: true });
+  await mkdir(options.workingDirectory, { recursive: true });
+  for (const [index, profile] of manifest.profiles.entries()) {
+    const trials = manifest.trials.filter((trial) => trial.profile.id === profile.id).map((trial) => ({
       runId: trial.runId,
-      graderConfig: trial.graderConfig,
       criteria: trial.scope?.criteria,
       gates: trial.scope?.gates,
       behaviors: trial.scope?.behaviorObservations,
@@ -135,18 +143,20 @@ export async function generateReadoutNarrative(
       errors: trial.scope?.errors,
       artifactRefs: trial.artifactRefs,
       trajectoryEvents: trial.trajectoryEvents,
-      })),
-    })),
-  };
+    }));
+    await writeFile(
+      join(options.workingDirectory, trialFiles[index]!.file),
+      `${JSON.stringify({ profileId: profile.id, trials }, null, 2)}\n`,
+    );
+  }
   let narrative: z.infer<typeof narrativeSchema> | undefined;
   const submitNarrative = defineTool("submit_scope_readout_narrative", {
     description: "Submit Scope readout prose and target-profile interventions.",
     parameters: narrativeSchema,
     skipPermission: true,
-    handler: (value) => {
+    handler: validatedHandler(narrativeSchema, (value) => {
       narrative = value;
-      return { ok: true };
-    },
+    }),
   });
   const client = (options.clientFactory ?? createCopilotJudgeClient)();
   await client.start();
@@ -154,7 +164,7 @@ export async function generateReadoutNarrative(
     const session = await client.createSession({
       model: options.model,
       onPermissionRequest: approveAll,
-      workingDirectory: process.cwd(),
+      workingDirectory: options.workingDirectory,
       tools: [submitNarrative],
     });
     try {
@@ -177,8 +187,9 @@ Hard constraints:
 - Compare the target with baseline using targetComparisons. Explain addressed, improved, unchanged, and regressed criteria where they affect the conclusion.
 - In keyFinding, identify a tie when top deterministic outcomes are equal; do not select a winner without a measured difference.
 - In criteriaAnalysis, distinguish persistent failures across profiles, target improvements, target regressions, and universally passing criteria.
-- For each profile narrative, state consistent behavior, skipped or misused extension points, and the execution outcome pattern. Use detailed trialsByProfile evidence, not aggregate rates alone.
-- Layer 3 targets exactly targetProfileId. Every action evidence runId must belong to that profile's entry in trialsByProfile.
+- For each profile narrative, state consistent behavior, skipped or misused extension points, and the execution outcome pattern. Use detailed per-trial evidence, not aggregate rates alone.
+- Per-trial evidence for each profile is in the JSON file named in trialFiles, in your working directory. Read the target profile's file completely and read other profiles' files for comparative evidence.
+- Layer 3 targets exactly targetProfileId. Every action evidence runId must belong to that profile's trial file.
 - Count distinct affected target run IDs. Every runs.total must equal targetRunCount.
 - Cover every non-prerequisite target criterion below 100% in an action or evidence-backed constraint. Include the exact criterion name in that item.
 - Do not emit actions for criteria at 100%.
@@ -197,11 +208,7 @@ Hard constraints:
 - Call submit_scope_readout_narrative exactly once.`;
 
 function selectTarget(profiles: ScopeReporterProfile[], requested?: string): ScopeReporterProfile {
-  if (requested) {
-    const target = profiles.find((profile) => profile.id === requested);
-    if (!target) throw new Error(`Unknown target profile: ${requested}`);
-    return target;
-  }
+  if (requested) return findProfile(profiles, requested);
   const baseline = profiles.find((profile) => profile.isBaseline);
   const alternatives = profiles.filter((profile) => profile.id !== baseline?.id);
   if (alternatives.length === 1) return alternatives[0]!;

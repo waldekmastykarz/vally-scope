@@ -319,6 +319,7 @@ export class ScopeGrader implements Grader {
         config.model,
         index,
         stimulusPrompt,
+        config.criteria_instructions,
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

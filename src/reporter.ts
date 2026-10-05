@@ -156,6 +156,7 @@ export async function finalizeScopeReadout(
     };
     const narrative = await generateReadoutNarrative(manifest, {
       model: synthesisModel,
+      workingDirectory: join(options.outputDirectory, "scope-synthesis"),
       ...(options.targetProfileId ? { targetProfileId: options.targetProfileId } : {}),
     });
     const readout = buildReadout(manifest, {

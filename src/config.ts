@@ -23,6 +23,7 @@ export const scopeGraderConfigSchema = z
   .object({
     model: z.string().min(1),
     scenario_type: z.enum(["code", "response"]),
+    criteria_instructions: z.string().min(1).optional(),
     criteria: z.array(criterionSchema).min(1),
     gates: z
       .object({

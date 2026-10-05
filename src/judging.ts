@@ -157,7 +157,9 @@ export async function evaluateCriterion(
   model: string,
   index: number,
   stimulusPrompt: string,
+  sharedInstructions?: string,
 ): Promise<ScopeCriterionResult> {
+  const shared = sharedInstructions ? `Instructions for every criterion:\n${sharedInstructions}\n\n` : "";
   let lastError: unknown;
   for (let attempt = 1; attempt <= 3; attempt++) {
     let session: ScopeJudgeSession | undefined;
@@ -168,10 +170,9 @@ export async function evaluateCriterion(
         description: "Submit the independent binary verdict and concrete evidence for this criterion.",
         parameters: criterionVerdictSchema,
         skipPermission: true,
-        handler: (args) => {
-          verdict = args;
-          return { ok: true };
-        },
+        handler: validatedHandler(criterionVerdictSchema, (value) => {
+          verdict = value;
+        }),
       });
       session = await client.createSession({
         model,
@@ -181,7 +182,7 @@ export async function evaluateCriterion(
       });
       await session.sendAndWait(
         {
-          prompt: `${CRITERION_SYSTEM_PROMPT}\n\nUser prompt: ${stimulusPrompt}\n\nCriterion: ${criterion.name}\nInstructions: ${criterion.instructions}\n\nExamine the workspace and call submit_verdict.`,
+          prompt: `${CRITERION_SYSTEM_PROMPT}\n\nUser prompt: ${stimulusPrompt}\n\n${shared}Criterion: ${criterion.name}\nInstructions: ${criterion.instructions}\n\nExamine the workspace and call submit_verdict.`,
         },
         CRITERION_TIMEOUT_MS,
       );
@@ -244,10 +245,9 @@ async function evaluatePromptedExecutionGate(
     description: `Submit the ${label} gate verdict with concrete execution evidence.`,
     parameters: executionGateVerdictSchema,
     skipPermission: true,
-    handler: (args) => {
-      verdict = args;
-      return { ok: true };
-    },
+    handler: validatedHandler(executionGateVerdictSchema, (value) => {
+      verdict = value;
+    }),
   });
   const session = await client.createSession({
     model,
@@ -296,10 +296,9 @@ export async function analyzeBehavior(
     description: "Submit Scope behavior observations and root causes with exact Vally trajectory event identities.",
     parameters: behaviorSchema,
     skipPermission: true,
-    handler: (args) => {
-      result = args;
-      return { ok: true };
-    },
+    handler: validatedHandler(behaviorSchema, (value) => {
+      result = value;
+    }),
   });
   const session = await client.createSession({
     model,
@@ -309,7 +308,7 @@ export async function analyzeBehavior(
   });
   try {
     await session.sendAndWait(
-      { prompt: `${BEHAVIOR_PROMPT}\n\nRun context is in scope-context.json.${behaviorConstraint}` },
+      { prompt: `${BEHAVIOR_PROMPT}\n\nThe trajectoryId is ${evidence.trajectory.id}. Run context is in scope-context.json.${behaviorConstraint}` },
       BEHAVIOR_TIMEOUT_MS,
     );
     if (!result) throw new Error("Behavior judge did not call submit_behavior");
@@ -474,6 +473,18 @@ function isValidEventIdentity(
   evidence: PreservedTrajectoryEvidence,
 ): boolean {
   return trajectoryId === evidence.trajectory.id && eventIndex < evidence.trajectory.events.length;
+}
+
+export function validatedHandler<T extends z.ZodType>(schema: T, accept: (value: z.infer<T>) => void) {
+  return (args: unknown) => {
+    // The SDK does not validate tool arguments; reject so the judge can call again.
+    const parsed = schema.safeParse(args);
+    if (!parsed.success) {
+      return { ok: false, error: `Invalid arguments. Fix them and call the tool again.\n${z.prettifyError(parsed.error)}` };
+    }
+    accept(parsed.data);
+    return { ok: true };
+  };
 }
 
 export function judgeErrorEvidence(message: string): ScopeEvidenceReference[] {

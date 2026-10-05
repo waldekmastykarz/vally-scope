@@ -1,6 +1,14 @@
-import { describe, expect, it, vi } from "vitest";
+import { readFile, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { generateReadoutNarrative } from "../src/narrative.js";
 import type { ScopeReporterManifest } from "../src/reporter-contract.js";
+
+const workingDirectory = join(process.cwd(), ".test-work", "narrative");
+
+afterEach(async () => {
+  await rm(workingDirectory, { recursive: true, force: true });
+});
 
 vi.mock("@github/copilot-sdk", () => ({
   approveAll: vi.fn(),
@@ -75,15 +83,20 @@ describe("generateReadoutNarrative", () => {
     const createSession = vi.fn(async (config: any) => ({
       disconnect,
       sendAndWait: async ({ prompt }: { prompt: string }) => {
+        expect(config.workingDirectory).toBe(workingDirectory);
         expect(prompt).toContain('"baselineProfileId": "baseline"');
-        expect(prompt).toContain('"profileId": "baseline"');
-        expect(prompt).toContain('"profileId": "target"');
-        expect(prompt).toContain('"type": "baseline-evidence"');
-        expect(prompt).toContain('"type": "target-evidence"');
+        expect(prompt).toContain('"file": "trials-1.json"');
+        expect(prompt).toContain('"file": "trials-2.json"');
+        expect(prompt).not.toContain("baseline-evidence");
         expect(prompt).toContain('"instruction": "do it"');
         expect(prompt).toContain('"rubric": []');
         expect(prompt).toContain("no target-profile change is recommended");
         expect(prompt).toContain("applicable gate below 100%");
+        const baselineFile = JSON.parse(await readFile(join(workingDirectory, "trials-1.json"), "utf8"));
+        const targetFile = JSON.parse(await readFile(join(workingDirectory, "trials-2.json"), "utf8"));
+        expect(baselineFile).toMatchObject({ profileId: "baseline", trials: [{ trajectoryEvents: [{ type: "baseline-evidence" }] }] });
+        expect(targetFile).toMatchObject({ profileId: "target", trials: [{ trajectoryEvents: [{ type: "target-evidence" }] }] });
+        expect(await config.tools[0].handler({ keyFinding: "Finding" })).toMatchObject({ ok: false });
         await config.tools[0].handler({
           keyFinding: "Finding",
           criteriaAnalysis: "Analysis",
@@ -98,6 +111,7 @@ describe("generateReadoutNarrative", () => {
 
     const result = await generateReadoutNarrative(manifest(), {
       model: "judge",
+      workingDirectory,
       clientFactory: () => ({ start: vi.fn(), stop, createSession }) as never,
     });
 

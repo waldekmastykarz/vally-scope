@@ -73,6 +73,20 @@ describe("ScopeGrader", () => {
     expect(result.passed).toBe(false);
   });
 
+  it("passes shared criteria instructions to every criterion judge", async () => {
+    const { base } = dependencies();
+    const grader = new ScopeGrader(base);
+    await grader.grade(input({
+      ...config([...prerequisites, { name: "Quality", classification: "idiomaticUse", instructions: "good" }]),
+      criteria_instructions: "shared rules",
+    }));
+
+    expect(base.evaluateCriterion).toHaveBeenCalledTimes(2);
+    for (const call of vi.mocked(base.evaluateCriterion).mock.calls) {
+      expect(call[6]).toBe("shared rules");
+    }
+  });
+
   it("evaluates Select before mechanical gates", async () => {
     const order: string[] = [];
     const evaluateCriterion = vi.fn(async (_client, _factory, criterion: ScopeGraderConfig["criteria"][number]) => {
